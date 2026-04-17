@@ -16,6 +16,8 @@ import numpy as np
 import os
 from PIL import Image
 import tempfile
+import warnings
+warnings.filterwarnings('ignore')
 
 # Check if kaleido is available for Plotly image export
 try:
@@ -453,49 +455,48 @@ def create_image_download_button(df, table_name, **kwargs):
             st.markdown(href, unsafe_allow_html=True)
             st.success(f"✅ {table_name} image ready for download!")
 
-# Helper function to clean data for JSON serialization
+# ==================== FIXED JSON CLEANING FOR STREAMLIT CLOUD ====================
+
 def clean_data_for_json(df):
-    """Replace NaN, NaT, and infinite values with None or empty string for JSON serialization"""
-    cleaned_df = df.copy()
-    
-    # Replace NaN and infinite values with None in numeric columns
-    for col in cleaned_df.columns:
-        # Handle numeric columns with NaN/inf
-        if cleaned_df[col].dtype in ['float64', 'float32', 'int64', 'int32']:
-            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
-            cleaned_df[col] = cleaned_df[col].replace([np.inf, -np.inf], None)
-        # Handle datetime columns
-        elif cleaned_df[col].dtype == 'datetime64[ns]':
-            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
-            cleaned_df[col] = cleaned_df[col].apply(lambda x: x.isoformat() if x is not None and pd.notna(x) else None)
-        # Handle object/string columns
-        else:
-            # For string columns, replace NaN with empty string or None
-            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
-            # Also handle 'nan' strings
-            if cleaned_df[col].dtype == 'object':
-                cleaned_df[col] = cleaned_df[col].apply(lambda x: None if x in ['nan', 'NaN', 'None', '', ' ', pd.NA] else x)
-    
-    # Convert the entire DataFrame to a list of dictionaries with proper None handling
+    """Replace NaN, NaT, and infinite values with empty strings for JSON serialization"""
+    # Convert to list of dictionaries manually to handle all edge cases
     records = []
-    for _, row in cleaned_df.iterrows():
+    
+    for _, row in df.iterrows():
         record = {}
-        for col in cleaned_df.columns:
+        for col in df.columns:
             val = row[col]
-            # Check for any remaining NaN/NaT/None values
-            if pd.isna(val) or val == pd.NA:
-                record[col] = None
+            
+            # Handle different types of invalid values
+            if val is None:
+                record[col] = ""
+            elif pd.isna(val):  # Catches NaN, NaT, None
+                record[col] = ""
             elif isinstance(val, (np.datetime64, pd.Timestamp)):
-                record[col] = val.isoformat() if pd.notna(val) else None
-            elif isinstance(val, (np.floating, np.integer)):
-                record[col] = None if pd.isna(val) else float(val) if isinstance(val, np.floating) else int(val)
+                # Convert datetime to string
+                record[col] = val.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(val) else ""
+            elif isinstance(val, (np.floating, float)):
+                # Handle float values (including inf)
+                if np.isnan(val) or np.isinf(val):
+                    record[col] = ""
+                else:
+                    record[col] = val
+            elif isinstance(val, (np.integer, int)):
+                record[col] = int(val) if pd.notna(val) else ""
             else:
-                record[col] = val
+                # Convert to string and clean up
+                str_val = str(val)
+                if str_val in ['nan', 'NaN', 'NaT', 'None', '<NA>', '']:
+                    record[col] = ""
+                else:
+                    record[col] = str_val
+        
         records.append(record)
     
     return records
 
-# Google Apps Script Integration Functions
+# ==================== GOOGLE APPS SCRIPT INTEGRATION ====================
+
 def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", worksheet_name="Device_Data", apps_script_url=None, export_mode="Replace"):
     """Export dataframe to Google Sheets using Apps Script web app"""
     try:
@@ -505,9 +506,12 @@ def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", workshe
         # Clean the data for JSON serialization
         cleaned_records = clean_data_for_json(df)
         
+        # Determine action based on export mode
+        action = 'append' if export_mode == "Append (Add rows)" else 'export'
+        
         # Prepare data payload
         data = {
-            'action': 'append' if export_mode == "Append (Add rows)" else 'export',
+            'action': action,
             'sheetName': sheet_name,
             'worksheetName': worksheet_name,
             'data': cleaned_records,
@@ -515,30 +519,32 @@ def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", workshe
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
-        # Send to Apps Script
+        # Send to Apps Script with increased timeout for cloud environment
         response = requests.post(
             apps_script_url, 
             json=data, 
             headers={'Content-Type': 'application/json'}, 
-            timeout=30
+            timeout=60
         )
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get('success'):
-                return True, result.get('sheetUrl', apps_script_url)
-            else:
-                return False, result.get('error', 'Unknown error')
+            try:
+                result = response.json()
+                if result.get('success'):
+                    return True, result.get('sheetUrl', apps_script_url)
+                else:
+                    return False, result.get('error', 'Unknown error')
+            except json.JSONDecodeError:
+                return False, f"Invalid JSON response: {response.text[:200]}"
         else:
-            return False, f"HTTP Error: {response.status_code}"
+            return False, f"HTTP Error: {response.status_code} - {response.text[:200]}"
+            
     except requests.exceptions.Timeout:
-        return False, "Request timeout - check your internet connection"
+        return False, "Request timeout - the Google Sheets service might be slow. Please try again."
     except requests.exceptions.ConnectionError:
-        return False, "Connection error - cannot reach Apps Script URL"
-    except json.JSONDecodeError as e:
-        return False, f"Invalid response from server: {e}"
+        return False, "Connection error - cannot reach the Apps Script URL. Check your URL and internet connection."
     except Exception as e:
-        return False, str(e)
+        return False, f"Export error: {str(e)}"
 
 def test_apps_script_connection(apps_script_url):
     """Test connection to Apps Script web app"""
@@ -551,7 +557,7 @@ def test_apps_script_connection(apps_script_url):
             apps_script_url, 
             json=data, 
             headers={'Content-Type': 'application/json'}, 
-            timeout=10
+            timeout=15
         )
         
         if response.status_code == 200:
@@ -562,15 +568,39 @@ def test_apps_script_connection(apps_script_url):
                 else:
                     return False, result.get('error', 'Connection failed')
             except json.JSONDecodeError:
-                return False, "Invalid JSON response from server"
+                return False, f"Invalid response from server. Response: {response.text[:100]}"
         else:
             return False, f"HTTP Error: {response.status_code}"
     except requests.exceptions.Timeout:
-        return False, "Connection timeout - check URL and internet"
+        return False, "Connection timeout - check your URL and internet connection"
     except requests.exceptions.ConnectionError:
-        return False, "Cannot connect to the Apps Script URL"
+        return False, "Cannot connect to the Apps Script URL. Please verify the URL is correct and the script is deployed."
     except Exception as e:
-        return False, str(e)
+        return False, f"Connection error: {str(e)}"
+
+def debug_json_serialization(df):
+    """Debug function to check JSON serialization"""
+    try:
+        records = clean_data_for_json(df)
+        # Test serialization
+        test_json = json.dumps(records[:5])  # Test first 5 records
+        st.success(f"✅ JSON serialization test passed! First 5 records: {len(test_json)} chars")
+        return True
+    except Exception as e:
+        st.error(f"❌ JSON serialization failed: {e}")
+        # Find problematic row
+        for idx, row in df.iterrows():
+            try:
+                record = {}
+                for col in df.columns:
+                    val = row[col]
+                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                        st.write(f"Problem at row {idx}, col {col}: {val}")
+                json.dumps(record)
+            except:
+                st.write(f"Problem row index: {idx}")
+                break
+        return False
 
 # Title
 st.markdown('<div class="main-header">🏢 Biometric Device Monitoring System PRO</div>', unsafe_allow_html=True)
@@ -681,7 +711,7 @@ function doPost(e) {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       
       const rows = data.data.map(row => 
-        headers.map(h => row[h] !== null ? row[h] : ""));
+        headers.map(h => row[h] !== null && row[h] !== "" ? row[h] : ""));
       if (rows.length > 0) {
         sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
       }
@@ -709,7 +739,7 @@ function doPost(e) {
       }
       
       const rows = data.data.map(row => 
-        headers.map(h => row[h] !== null ? row[h] : ""));
+        headers.map(h => row[h] !== null && row[h] !== "" ? row[h] : ""));
       
       if (rows.length > 0) {
         sheet.getRange(lastRow + 1, 1, rows.length, headers.length).setValues(rows);
@@ -960,21 +990,24 @@ with st.sidebar:
         # Quick Google Sheets Export
         if st.session_state.apps_script_url:
             if st.button("📤 Export to Google Sheets", use_container_width=True):
-                with st.spinner("Exporting..."):
+                # Debug serialization first (optional, can be removed in production)
+                with st.spinner("Exporting to Google Sheets..."):
                     success, result = export_to_google_sheets_apps_script(
                         st.session_state.processed_data,
                         st.session_state.sheet_config['sheet_name'],
                         st.session_state.sheet_config['worksheet_name'],
-                        st.session_state.apps_script_url
+                        st.session_state.apps_script_url,
+                        st.session_state.export_mode
                     )
                     if success:
                         st.session_state.google_sheet_url = result
-                        st.success("✅ Exported!")
-                        st.markdown(f"[📊 Open Sheet]({result})")
+                        st.success("✅ Exported successfully!")
+                        st.markdown(f"[📊 Open Google Sheet]({result})")
                     else:
-                        st.error(f"❌ {result}")
+                        st.error(f"❌ Export failed: {result}")
 
-# Processing function
+# ==================== DATA PROCESSING FUNCTION ====================
+
 def process_biometric_data(portal_file, master_file, active_threshold=2):
     try:
         # Load files
@@ -1178,7 +1211,8 @@ if process_button:
                             processed_df,
                             st.session_state.sheet_config['sheet_name'],
                             st.session_state.sheet_config['worksheet_name'],
-                            st.session_state.apps_script_url
+                            st.session_state.apps_script_url,
+                            st.session_state.export_mode
                         )
                         if success:
                             st.session_state.google_sheet_url = result
@@ -1240,8 +1274,6 @@ if st.session_state.processed_data is not None:
             fig1.update_traces(textposition='inside', textinfo='percent+label')
             fig1.update_layout(height=400)
             st.plotly_chart(fig1, use_container_width=True)
-            
-           
         
         with col2:
             st.subheader("Inactive Days Distribution")
@@ -1253,8 +1285,6 @@ if st.session_state.processed_data is not None:
                           color='Count', color_continuous_scale='Viridis')
             fig2.update_layout(height=400)
             st.plotly_chart(fig2, use_container_width=True)
-            
-            
         
         # Additional metrics
         st.markdown("---")
@@ -1364,7 +1394,6 @@ if st.session_state.processed_data is not None:
                     fig3.update_layout(height=500)
                     st.plotly_chart(fig3, use_container_width=True)
                     
-                    
                     # Export crosstab data as image
                     st.markdown("---")
                     st.subheader("📸 Export Status by Near Facility Table")
@@ -1379,8 +1408,6 @@ if st.session_state.processed_data is not None:
                     fig4 = px.bar(bio_status, title='Status Distribution by Bio Metric Type', barmode='group')
                     fig4.update_layout(height=500)
                     st.plotly_chart(fig4, use_container_width=True)
-                    
-                
                     
                     # Export crosstab data as image
                     st.markdown("---")
@@ -1492,6 +1519,6 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align: center; color: gray;'>🏢 Biometric Device Monitor PRO | v5.2 (Permanent Config + Image Export) | Config: {CONFIG_PATH} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>",
+    f"<p style='text-align: center; color: gray;'>🏢 Biometric Device Monitor PRO | v5.2 (Streamlit Cloud Compatible) | Config: {CONFIG_PATH} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>",
     unsafe_allow_html=True
 )
