@@ -455,35 +455,74 @@ def create_image_download_button(df, table_name, **kwargs):
 
 # Helper function to clean data for JSON serialization
 def clean_data_for_json(df):
-    """Replace NaN, NaT, and infinite values with None for JSON serialization"""
+    """Replace NaN, NaT, and infinite values with None or empty string for JSON serialization"""
     cleaned_df = df.copy()
-    cleaned_df = cleaned_df.replace({np.nan: None})
-    datetime_cols = cleaned_df.select_dtypes(include=['datetime64']).columns
-    for col in datetime_cols:
-        cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
-        cleaned_df[col] = cleaned_df[col].apply(lambda x: x.isoformat() if x is not None else None)
-    cleaned_df = cleaned_df.replace([np.inf, -np.inf], None)
+    
+    # Replace NaN and infinite values with None in numeric columns
     for col in cleaned_df.columns:
-        if cleaned_df[col].dtype == 'object':
-            cleaned_df[col] = cleaned_df[col].apply(lambda x: None if pd.isna(x) else x)
-    return cleaned_df
+        # Handle numeric columns with NaN/inf
+        if cleaned_df[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
+            cleaned_df[col] = cleaned_df[col].replace([np.inf, -np.inf], None)
+        # Handle datetime columns
+        elif cleaned_df[col].dtype == 'datetime64[ns]':
+            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
+            cleaned_df[col] = cleaned_df[col].apply(lambda x: x.isoformat() if x is not None and pd.notna(x) else None)
+        # Handle object/string columns
+        else:
+            # For string columns, replace NaN with empty string or None
+            cleaned_df[col] = cleaned_df[col].where(pd.notna(cleaned_df[col]), None)
+            # Also handle 'nan' strings
+            if cleaned_df[col].dtype == 'object':
+                cleaned_df[col] = cleaned_df[col].apply(lambda x: None if x in ['nan', 'NaN', 'None', '', ' ', pd.NA] else x)
+    
+    # Convert the entire DataFrame to a list of dictionaries with proper None handling
+    records = []
+    for _, row in cleaned_df.iterrows():
+        record = {}
+        for col in cleaned_df.columns:
+            val = row[col]
+            # Check for any remaining NaN/NaT/None values
+            if pd.isna(val) or val == pd.NA:
+                record[col] = None
+            elif isinstance(val, (np.datetime64, pd.Timestamp)):
+                record[col] = val.isoformat() if pd.notna(val) else None
+            elif isinstance(val, (np.floating, np.integer)):
+                record[col] = None if pd.isna(val) else float(val) if isinstance(val, np.floating) else int(val)
+            else:
+                record[col] = val
+        records.append(record)
+    
+    return records
 
 # Google Apps Script Integration Functions
-def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", worksheet_name="Device_Data", apps_script_url=None):
+def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", worksheet_name="Device_Data", apps_script_url=None, export_mode="Replace"):
     """Export dataframe to Google Sheets using Apps Script web app"""
     try:
         if not apps_script_url:
             return False, "Apps Script URL not configured"
-        cleaned_df = clean_data_for_json(df)
+        
+        # Clean the data for JSON serialization
+        cleaned_records = clean_data_for_json(df)
+        
+        # Prepare data payload
         data = {
-            'action': 'export',
+            'action': 'append' if export_mode == "Append (Add rows)" else 'export',
             'sheetName': sheet_name,
             'worksheetName': worksheet_name,
-            'data': cleaned_df.to_dict('records'),
-            'columns': cleaned_df.columns.tolist(),
+            'data': cleaned_records,
+            'columns': df.columns.tolist(),
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        response = requests.post(apps_script_url, json=data, headers={'Content-Type': 'application/json'}, timeout=30)
+        
+        # Send to Apps Script
+        response = requests.post(
+            apps_script_url, 
+            json=data, 
+            headers={'Content-Type': 'application/json'}, 
+            timeout=30
+        )
+        
         if response.status_code == 200:
             result = response.json()
             if result.get('success'):
@@ -492,22 +531,44 @@ def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", workshe
                 return False, result.get('error', 'Unknown error')
         else:
             return False, f"HTTP Error: {response.status_code}"
+    except requests.exceptions.Timeout:
+        return False, "Request timeout - check your internet connection"
+    except requests.exceptions.ConnectionError:
+        return False, "Connection error - cannot reach Apps Script URL"
+    except json.JSONDecodeError as e:
+        return False, f"Invalid response from server: {e}"
     except Exception as e:
         return False, str(e)
 
 def test_apps_script_connection(apps_script_url):
     """Test connection to Apps Script web app"""
     try:
-        data = {'action': 'test', 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        response = requests.post(apps_script_url, json=data, headers={'Content-Type': 'application/json'}, timeout=10)
+        data = {
+            'action': 'test', 
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        response = requests.post(
+            apps_script_url, 
+            json=data, 
+            headers={'Content-Type': 'application/json'}, 
+            timeout=10
+        )
+        
         if response.status_code == 200:
-            result = response.json()
-            if result.get('success'):
-                return True, "Connection successful!"
-            else:
-                return False, result.get('error', 'Connection failed')
+            try:
+                result = response.json()
+                if result.get('success'):
+                    return True, "Connection successful!"
+                else:
+                    return False, result.get('error', 'Connection failed')
+            except json.JSONDecodeError:
+                return False, "Invalid JSON response from server"
         else:
             return False, f"HTTP Error: {response.status_code}"
+    except requests.exceptions.Timeout:
+        return False, "Connection timeout - check URL and internet"
+    except requests.exceptions.ConnectionError:
+        return False, "Cannot connect to the Apps Script URL"
     except Exception as e:
         return False, str(e)
 
