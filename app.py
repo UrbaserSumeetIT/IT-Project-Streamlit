@@ -163,7 +163,7 @@ with st.sidebar:
     st.markdown("---")
     
     with st.expander("⚙️ **Advanced Settings**", expanded=False):
-        active_days = st.number_input("Active Days Threshold", min_value=1, max_value=30, value=2)
+        active_days = st.number_input("Active Days Threshold", min_value=1, max_value=30, value=1)
         st.session_state.alerts_config['inactive_threshold'] = st.slider(
             "Inactive Alert Threshold (days)", 
             min_value=7, max_value=90, value=30
