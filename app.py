@@ -409,7 +409,7 @@ def create_image_download_button(df, table_name, **kwargs):
             header_color = st.color_picker("Header color", '#667eea', key=f"header_{table_name}")
         
         with col_b:
-            font_size = st.slider("Font size", 6, 14, 10, key=f"font_{table_name}")
+            font_size = st.slider("Font size", 6, 14, 6, key=f"font_{table_name}")
             
             # Row color pickers
             row_color1 = st.color_picker("Row color 1", '#ffffff', key=f"row1_{table_name}")
