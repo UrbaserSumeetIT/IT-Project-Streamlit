@@ -576,7 +576,7 @@ def create_image_download_button(df, table_name, **kwargs):
             wrap_text_option = st.checkbox("Wrap long text", value=True, 
                                           help="Wrap long text to multiple lines for better fit",
                                           key=f"wrap_{table_name}")
-            max_chars = st.slider("Max characters per line", 20, 50, 30, 
+            max_chars = st.slider("Max characters per line", 1, 50, 30, 
                                  key=f"maxchars_{table_name}") if wrap_text_option else 30
             # ====================================================
     # ========================================================
