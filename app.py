@@ -321,15 +321,18 @@ def wrap_text(text, max_chars=30):
         return '\n'.join([text[i:i+max_chars] for i in range(0, len(text), max_chars)])
 
 def calculate_optimal_column_widths(headers, cell_text, font_size=10, 
-                                   max_width_inches=4.0, min_width_inches=0.8):
-    """Calculate optimal column widths based on content"""
+                                   max_width_inches=5.0, min_width_inches=0.8):
+    """Calculate optimal column widths based on content with better accuracy"""
     col_widths = []
-    char_width_factor = 0.12  # Approximate width per character in inches
+    
+    # More accurate character width factor based on font size
+    # At font_size=10, average character is ~0.08 inches wide
+    char_width_factor = 0.008 * font_size
     
     for i, header in enumerate(headers):
         # Get max width from header (considering wrapped lines)
-        header_lines = header.split('\n')
-        max_header_chars = max([len(line) for line in header_lines]) if header_lines else len(header)
+        header_lines = str(header).split('\n')
+        max_header_chars = max([len(line) for line in header_lines]) if header_lines else len(str(header))
         
         # Get max width from data rows
         max_data_chars = 0
@@ -341,8 +344,16 @@ def calculate_optimal_column_widths(headers, cell_text, font_size=10,
         
         max_chars = max(max_header_chars, max_data_chars, 5)
         
-        # Convert to width with padding
-        width = max_chars * char_width_factor + 0.2  # Add padding
+        # Calculate width with padding
+        # Add extra padding for header (bold text takes more space)
+        if i < len(headers):
+            header_padding = len(str(headers[i])) * 0.02
+        else:
+            header_padding = 0.1
+            
+        width = (max_chars * char_width_factor) + 0.3 + header_padding
+        
+        # Ensure width is within bounds
         width = max(min_width_inches, min(width, max_width_inches))
         col_widths.append(width)
     
@@ -385,50 +396,62 @@ def dataframe_to_image_autofit(df, title="Data Report", font_size=10,
             wrapped_row = [wrap_text(str(val), max_chars_per_cell) for val in row.values]
             cell_text.append(wrapped_row)
     else:
-        headers = columns
+        headers = [str(col) for col in columns]
         cell_text = []
         for _, row in filtered_df.iterrows():
             cell_text.append([str(val) for val in row.values])
     
-    # Calculate optimal column widths
+    # Calculate optimal column widths with better accuracy
     col_widths = calculate_optimal_column_widths(headers, cell_text, font_size)
     
     # Create figure with dynamic sizing
-    total_width = sum(col_widths) + 0.5
-    fig_height = min(35, max(6, len(filtered_df) * 0.4 + 2.5))
+    total_width = sum(col_widths) + 0.8  # Add extra for margins
+    fig_height = min(35, max(6, len(filtered_df) * 0.45 + 3.0))
+    
+    # Create figure and axis
     fig, ax = plt.subplots(figsize=(total_width, fig_height))
     ax.axis('tight')
     ax.axis('off')
     
-    # Create table
-    table = ax.table(cellText=cell_text, colLabels=headers,
-                     cellLoc='left', loc='center', colWidths=col_widths)
+    # Create table with explicit column widths
+    table = ax.table(
+        cellText=cell_text, 
+        colLabels=headers,
+        cellLoc='left', 
+        loc='center', 
+        colWidths=col_widths
+    )
     
     # Style the table
     table.auto_set_font_size(False)
     table.set_fontsize(font_size)
-    table.scale(1.0, 1.5)
     
-    # Color cells
+    # Apply better scaling
+    table.scale(1.0, 1.8)  # Increased row height for better readability
+    
+    # Color cells with better contrast
     for (i, j), cell in table.get_celld().items():
         if i == 0:
             # Header row
             cell.set_facecolor(header_color)
-            cell.set_text_props(weight='bold', color='white', ha='left')
+            cell.set_text_props(weight='bold', color='white', ha='left', va='center')
             cell.set_edgecolor('white')
-            cell.set_linewidth(0.5)
+            cell.set_linewidth(0.8)
         else:
             # Data rows
             cell.set_facecolor(row_colors[i % 2])
-            cell.set_text_props(ha='left', color='#2c3e50')
-            cell.set_edgecolor('#e0e0e0')
+            cell.set_text_props(ha='left', va='center', color='#2c3e50')
+            cell.set_edgecolor('#d0d0d0')
             cell.set_linewidth(0.3)
+        
+        # Add padding to cells
+        cell.PAD = 0.05
     
     # Add title
-    ax.set_title(title, fontsize=14, weight='bold', pad=20, color='#2c3e50')
+    ax.set_title(title, fontsize=font_size + 4, weight='bold', pad=25, color='#2c3e50')
     
-    # Adjust layout
-    plt.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.04)
+    # Adjust layout with better margins
+    plt.subplots_adjust(left=0.03, right=0.97, top=0.92, bottom=0.05)
     plt.tight_layout()
     
     return fig
