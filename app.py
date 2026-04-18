@@ -388,6 +388,75 @@ def dataframe_to_image(df, title="Data Report", col_widths=None, font_size=10,
     
     return fig
 
+def wrap_text(text, max_chars=25):
+    """Wrap long text to multiple lines"""
+    text = str(text)
+    if len(text) <= max_chars:
+        return text
+    words = text.split()
+    lines = []
+    current_line = []
+    current_len = 0
+    
+    for word in words:
+        if current_len + len(word) + 1 <= max_chars:
+            current_line.append(word)
+            current_len += len(word) + 1
+        else:
+            if current_line:
+                lines.append(' '.join(current_line))
+            current_line = [word]
+            current_len = len(word)
+    
+    if current_line:
+        lines.append(' '.join(current_line))
+    
+    return '\n'.join(lines)
+
+def dataframe_to_image_wrapped(df, title="Data Report", font_size=10, 
+                               header_color='#667eea', row_colors=['#ffffff', '#f8f9fa'],
+                               max_rows=100, max_chars_per_cell=30):
+    """Version with text wrapping for better fit"""
+    
+    # ... [same filtering and sorting code as above] ...
+    
+    # Prepare data with wrapped text
+    columns = list(filtered_df.columns)
+    wrapped_headers = [wrap_text(col, max_chars_per_cell) for col in columns]
+    
+    cell_text = []
+    for _, row in filtered_df.iterrows():
+        wrapped_row = [wrap_text(str(val), max_chars_per_cell) for val in row.values]
+        cell_text.append(wrapped_row)
+    
+    # Calculate widths based on wrapped text
+    col_widths = []
+    for i, header in enumerate(wrapped_headers):
+        max_width = len(header.split('\n')[0])  # Base on first line
+        for row in cell_text:
+            lines = row[i].split('\n')
+            for line in lines:
+                max_width = max(max_width, len(line))
+        width = min(max(max_width * 0.1, 0.8), 4.0)
+        col_widths.append(width)
+    
+    # Create figure
+    total_width = sum(col_widths) + 1
+    fig_height = min(35, len(filtered_df) * 0.5 + 2.5)
+    fig, ax = plt.subplots(figsize=(total_width, fig_height))
+    ax.axis('tight')
+    ax.axis('off')
+    
+    # Create table
+    table = ax.table(cellText=cell_text, colLabels=wrapped_headers,
+                     cellLoc='left', loc='center', colWidths=col_widths)
+    
+    # Style the table (same as before)
+    # ...
+    
+    return fig
+
+
 def export_table_as_image(df, title, format='png', dpi=300, **kwargs):
     """Export dataframe as image with various formats"""
     
@@ -507,73 +576,6 @@ def create_image_download_button(df, table_name, **kwargs):
             href = f'<a href="data:image/{file_ext};base64,{b64_img}" download="biometric_{table_name.lower().replace(" ", "_")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{file_ext}">📥 Download {table_name} Image</a>'
             st.markdown(href, unsafe_allow_html=True)
             st.success(f"✅ {table_name} image ready for download!")
-def wrap_text(text, max_chars=25):
-    """Wrap long text to multiple lines"""
-    text = str(text)
-    if len(text) <= max_chars:
-        return text
-    words = text.split()
-    lines = []
-    current_line = []
-    current_len = 0
-    
-    for word in words:
-        if current_len + len(word) + 1 <= max_chars:
-            current_line.append(word)
-            current_len += len(word) + 1
-        else:
-            if current_line:
-                lines.append(' '.join(current_line))
-            current_line = [word]
-            current_len = len(word)
-    
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    return '\n'.join(lines)
-
-def dataframe_to_image_wrapped(df, title="Data Report", font_size=10, 
-                               header_color='#667eea', row_colors=['#ffffff', '#f8f9fa'],
-                               max_rows=100, max_chars_per_cell=30):
-    """Version with text wrapping for better fit"""
-    
-    # ... [same filtering and sorting code as above] ...
-    
-    # Prepare data with wrapped text
-    columns = list(filtered_df.columns)
-    wrapped_headers = [wrap_text(col, max_chars_per_cell) for col in columns]
-    
-    cell_text = []
-    for _, row in filtered_df.iterrows():
-        wrapped_row = [wrap_text(str(val), max_chars_per_cell) for val in row.values]
-        cell_text.append(wrapped_row)
-    
-    # Calculate widths based on wrapped text
-    col_widths = []
-    for i, header in enumerate(wrapped_headers):
-        max_width = len(header.split('\n')[0])  # Base on first line
-        for row in cell_text:
-            lines = row[i].split('\n')
-            for line in lines:
-                max_width = max(max_width, len(line))
-        width = min(max(max_width * 0.1, 0.8), 4.0)
-        col_widths.append(width)
-    
-    # Create figure
-    total_width = sum(col_widths) + 1
-    fig_height = min(35, len(filtered_df) * 0.5 + 2.5)
-    fig, ax = plt.subplots(figsize=(total_width, fig_height))
-    ax.axis('tight')
-    ax.axis('off')
-    
-    # Create table
-    table = ax.table(cellText=cell_text, colLabels=wrapped_headers,
-                     cellLoc='left', loc='center', colWidths=col_widths)
-    
-    # Style the table (same as before)
-    # ...
-    
-    return fig
 
 # ==================== FIXED JSON CLEANING FOR STREAMLIT CLOUD ====================
 
