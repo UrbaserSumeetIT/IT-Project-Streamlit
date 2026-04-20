@@ -332,7 +332,7 @@ def dataframe_to_image(df, title="Data Report", col_widths=None, font_size=10,
     # Create table
     table = ax.table(cellText=table_data.values, colLabels=columns, 
                      cellLoc='center', loc='center',
-                     colWidths=col_widths or [0.08] * len(columns))
+                     colWidths=col_widths or [0.09] * len(columns))
     
     # Style the table
     table.auto_set_font_size(False)
@@ -409,7 +409,7 @@ def create_image_download_button(df, table_name, **kwargs):
             header_color = st.color_picker("Header color", '#667eea', key=f"header_{table_name}")
         
         with col_b:
-            font_size = st.slider("Font size", 6, 14, 10, key=f"font_{table_name}")
+            font_size = st.slider("Font size", 6, 14, 6, key=f"font_{table_name}")
             
             # Row color pickers
             row_color1 = st.color_picker("Row color 1", '#ffffff', key=f"row1_{table_name}")
@@ -435,7 +435,7 @@ def create_image_download_button(df, table_name, **kwargs):
             
             img_buf = export_table_as_image(
                 df,
-                title=f"{table_name} - Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                title=f"{table_name} - Generated on {datetime.now().strftime('%Y-%m-%d ')}",
                 format=image_format.lower(),
                 dpi=dpi_value,
                 font_size=font_size,
@@ -474,7 +474,7 @@ def clean_data_for_json(df):
                 record[col] = ""
             elif isinstance(val, (np.datetime64, pd.Timestamp)):
                 # Convert datetime to string
-                record[col] = val.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(val) else ""
+                record[col] = val.strftime('%Y-%m-%d ') if pd.notna(val) else ""
             elif isinstance(val, (np.floating, float)):
                 # Handle float values (including inf)
                 if np.isnan(val) or np.isinf(val):
@@ -516,7 +516,7 @@ def export_to_google_sheets_apps_script(df, sheet_name="Biometric_Data", workshe
             'worksheetName': worksheet_name,
             'data': cleaned_records,
             'columns': df.columns.tolist(),
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            'timestamp': datetime.now().strftime("%Y-%m-%d ")
         }
         
         # Send to Apps Script with increased timeout for cloud environment
@@ -551,7 +551,7 @@ def test_apps_script_connection(apps_script_url):
     try:
         data = {
             'action': 'test', 
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            'timestamp': datetime.now().strftime("%Y-%m-%d")
         }
         response = requests.post(
             apps_script_url, 
@@ -1170,7 +1170,7 @@ def process_biometric_data(portal_file, master_file, active_threshold=2):
         result_df = result_df.sort_values('Status Order').drop('Status Order', axis=1)
         
         # Add processed timestamp
-        result_df['Processed'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        result_df['Processed'] = datetime.now().strftime("%Y-%m-%d ")
         
         st.success(f"✅ Processing complete! Found {len(result_df)} devices")
         
@@ -1367,7 +1367,7 @@ if st.session_state.processed_data is not None:
         inactive_only_df = df[df['Status'] == '⚠️ Inactive']
         
         if len(inactive_only_df) > 0:
-            top_inactive = inactive_only_df.nlargest(100, 'Days Inactive')[['Serial Number', 'Device Name', 'Near Facility', 'Area', 'Device IP', 'Days Inactive', 'Status']]
+            top_inactive = inactive_only_df.nlargest(100, 'Days Inactive')[['Serial Number', 'Device Name', 'Near Facility', 'Area', 'Device IP', 'Days Inactive', 'Status','Last Activity']]
             st.dataframe(top_inactive, use_container_width=True)
             
             # Export top inactive as image
@@ -1468,7 +1468,7 @@ if st.session_state.processed_data is not None:
         
         if st.session_state.saved_reports:
             for idx, report in enumerate(reversed(st.session_state.saved_reports)):
-                with st.expander(f"📄 {report['name']} - {report['date'].strftime('%Y-%m-%d %H:%M:%S')}"):
+                with st.expander(f"📄 {report['name']} - {report['date'].strftime('%Y-%m-%d ')}"):
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         if st.button(f"📊 Load Report", key=f"load_{idx}"):
@@ -1519,6 +1519,6 @@ else:
 # Footer
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align: center; color: gray;'>🏢 Biometric Device Monitor PRO | v5.2 (Streamlit Cloud Compatible) | Config: {CONFIG_PATH} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>",
+    f"<p style='text-align: center; color: gray;'>🏢 Biometric Device Monitor PRO | v5.2 (Streamlit Cloud Compatible) | Config: {CONFIG_PATH} | {datetime.now().strftime('%Y-%m-%d ')}</p>",
     unsafe_allow_html=True
 )
