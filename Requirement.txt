@@ -1,0 +1,9 @@
+pandas
+plotly
+pathlib
+hashlib
+matplotlib
+seaborn
+numpy
+tempfile
+warnings
