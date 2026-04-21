@@ -659,7 +659,7 @@ with st.expander("⚙️ **System Configuration** (Settings are saved permanentl
         
         export_mode = st.radio("Export Mode", 
                               ["Replace (Overwrite)", "Append (Add rows)"],
-                              index=0 if st.session_state.export_mode == "Replace (Overwrite)" else 1,
+                              index=1 if st.session_state.export_mode == "Replace (Overwrite)" else 1,
                               horizontal=True,
                               key="config_export_mode")
         
@@ -769,7 +769,7 @@ function doGet(e) {
         
         active_days = st.number_input("Active Days Threshold", 
                                       min_value=1, max_value=30, 
-                                      value=st.session_state.processing_config.get('active_days', 2),
+                                      value=st.session_state.processing_config.get('active_days', 1),
                                       help="Devices active within this many days are marked as 'Active'",
                                       key="config_active_days")
         
